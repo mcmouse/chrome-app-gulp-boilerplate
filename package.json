@@ -1,0 +1,25 @@
+{
+  "name": "chrome-app-gulp-boilerplate",
+  "version": "0.0.1",
+  "description": "Chrome App boilerplate and basic gulpfile",
+  "main": "gulpfile.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcmouse/chrome-app-gulp-boilerplate.git"
+  },
+  "keywords": [
+    "boilerplate",
+    "chrome-app",
+    "es6",
+    "gulpfile"
+  ],
+  "author": "Tom Lagier <tom@thomaslagier.me> (http://thisblogisdiamonds.com)",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mcmouse/chrome-app-gulp-boilerplate/issues"
+  },
+  "homepage": "https://github.com/mcmouse/chrome-app-gulp-boilerplate"
+}
