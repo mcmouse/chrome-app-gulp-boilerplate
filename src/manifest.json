@@ -9,8 +9,10 @@
   },
   "app": {
     "background": {
-      "scripts": ["background.js"]
+      "scripts": ["js/background.js"]
     }
   },
-  "permissions": []
+  "permissions": [
+    "http://localhost:35729/"
+  ]
 }
