@@ -7,7 +7,6 @@ var babelify       = require('babelify');
 var uglifyify      = require('uglifyify');
 var sourcemaps     = require('gulp-sourcemaps');
 var envify         = require('envify');
-var connect        = require('gulp-connect');
 var eslint         = require('gulp-eslint');
 var vinylPaths     = require('vinyl-paths');
 var source         = require('vinyl-source-stream');
@@ -16,12 +15,9 @@ var del            = require('del');
 var gulpif         = require('gulp-if');
 var gutil          = require('gulp-util');
 var runSequence    = require('run-sequence');
-var notify         = require('gulp-notify');
-var url            = require('url');
 var babel          = require('gulp-babel');
 var spritesmith    = require('gulp.spritesmith');
 var tinylr         = require('tiny-lr');
-var mochaPhantomJS = require('gulp-mocha-phantomjs');
 var minCss         = require('gulp-minify-css');
 var sass           = require('gulp-sass');
 var concat         = require('gulp-concat');
@@ -58,7 +54,6 @@ gulp.task('clean', function () {
 gulp.task('copy', function () {
   return gulp.src(conf.src, {cwd: './src'})
     .pipe(gulp.dest(conf.dist))
-    .pipe(connect.reload())
     .on('error', gutil.log);
 });
 
@@ -130,15 +125,6 @@ gulp.task('transpile', function () {
       return bundler.bundle()
           // log errors if they happen
           .on('error', gutil.log.bind(gutil, 'Browserify Error'))
-          .on('error', notify.onError(function(error){
-            var errorRegex = new RegExp('SyntaxError\:\s(\/[A-Za-z0-9\/\.]*)\:\s([A-Za-z0-9\s\-]*)\s(\([0-9]{1,5}\:[0-9]{1,5}\))')
-            var errorString = error.toString();
-            var errorArray = errorString.split(':');
-            var errorMessge = errorArray.slice(2, errorArray.length)
-                                        .join(':').replace(__dirname, '')
-                                        .replace('while parsing file: ', '')
-            return errorMessge;
-          }))
           .on('error', function (error) {
             if (isProd) throw error
           })
@@ -146,8 +132,7 @@ gulp.task('transpile', function () {
           .pipe(buffer())
           .pipe(gulpif(!isProd, sourcemaps.init({loadMaps: !isProd}))) // loads map from browserify file
           .pipe(gulpif(!isProd, sourcemaps.write()))
-          .pipe(gulp.dest(conf.dist + 'js'))
-          .pipe(connect.reload());
+          .pipe(gulp.dest(conf.dist + 'js'));
     }
 
     bundler.transform(babelify.configure({
@@ -173,9 +158,12 @@ gulp.task('transpile', function () {
   });
 });
 
+var lr = tinylr();
+
 gulp.task('connect', function () {
-  var lr = tinylr();
-  lr.listen(35729);
+  lr.listen(35729, function(){
+    console.log('TinyLR Listening on port 35729');
+  });
 });
 
 gulp.task('watch', function () {
@@ -183,6 +171,14 @@ gulp.task('watch', function () {
   gulp.watch('./src/**/*.{html,png,jpeg,jpg,json}', ['copy']);
   gulp.watch(conf.css, ['copy-css']);
   gulp.watch(conf.scss, ['scss']);
+
+  gulp.watch(conf.distFiles, function(evt) {
+    lr.changed({
+      body:{
+        files:[evt.path]
+      }
+    });
+  });
 });
 
 gulp.task('isProdFalse', function () {
@@ -203,109 +199,10 @@ gulp.task('build', function(callback) {
   runSequence('clean', 'sprite', ['copy-css', 'scss'], ['lint', 'transpile'], 'copy', callback);
 });
 
-gulp.task('dev', ['connect', 'watch', 'build'])
+gulp.task('dev', function(callback) {
+  runSequence('connect', 'build', 'watch');
+})
 
 gulp.task('default', function(callback) {
   runSequence('isProdTrue', 'build', 'zip');
-});
-
-
-
-
-/******************************************************
-*******************************************************
-******************* Test Taks *************************
-*******************************************************
-*******************************************************/
-
-gulp.task('transpile-tests', function() {
-  var bundler = browserify({
-    cache: {}, packageCache: {}, fullPaths: false,
-    paths: ['./src/js/'],
-    entries: ['./tests/index.js'],
-    debug: true,
-    detectGlobals: true
-  });
-  var bundle = function bundle () {
-    return bundler.bundle()
-      // log errors if they happen
-      .on('error', gutil.log.bind(gutil, 'Browserify Error'))
-      .on('error', function (error) {
-        throw error
-      })
-      .pipe(source('bundle.js'))
-      .pipe(buffer())
-      .pipe(sourcemaps.init({loadMaps: true})) // loads map from browserify file
-      .pipe(sourcemaps.write())
-      .pipe(gulp.dest(conf.testOutput))
-      .pipe(connect.reload());
-  }
-
-  bundler.transform(babelify.configure({
-    ignore: /\.scss$/,
-    optional: ['es7.decorators', 'es7.classProperties']
-  }));
-
-  bundler.transform({
-      global: true
-  }, 'envify');
-
-  // bundler.transform(scssify, {
-  //   'autoInject': {
-  //     'styleTag': isProd
-  //   },
-  //   'postcss': {
-  //     'autoprefixer': {}
-  //   },
-  //   'sass': {
-  //     'sourceMap': true,
-  //     'sourceMapEmbed': true,
-  //     'sourceMapContents': true,
-  //     'includePaths': ['./src/scss/'],
-  //     importer: function (file, prev, done) {
-  //       if (file === 'env') {
-  //         done({
-  //           contents: '$app-url: "' + process.env.SCS_ADMIN_URL + '";\n'
-  //         })
-  //       } else {
-  //         done()
-  //       }
-  //     }
-  //   }
-  // });
-
-  bundler.add('./tests/index.js');
-  bundler.on('update', bundle); // on any dep update, runs the bundler
-  bundler.on('log', gutil.log); // output build logs to terminal
-
-  return bundle()
-})
-
-
-gulp.task('mocha', function () {
-  return gulp
-    .src('test/index.html')
-    .pipe(mochaPhantomJS({reporter: 'list'}))
-    .on('error', notify.onError(function(error) {
-      return 'Unit tests failing'
-    }));
-});
-
-gulp.task('test', ['isProdFalse'], function() {
-  runSequence( 'transpile-tests', 'mocha');
-})
-
-gulp.task('test-watch', ['connect-test', 'test'], function() {
-  gulp.watch(conf.js, ['test']);
-  gulp.watch(conf.tests, ['test']);
-})
-
-gulp.task('connect-test', function () {
-  connect.server({
-    root: ['.'],
-    reloadPage: './test/index.html',
-    host: 'http://localhost',
-    port: 8091,
-    livereload: true
-  });
 });
