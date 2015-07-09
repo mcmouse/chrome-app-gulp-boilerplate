@@ -1,0 +1,13 @@
+.body {
+  background: blue; }
+
+.class {
+  background: red;
+  -webkit-transform: translateX(0);
+      -ms-transform: translateX(0);
+          transform: translateX(0); }
+
+#id {
+  color: green; }
+
+/*# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIl9zb21ldGhpbmcuc2NzcyIsImRpci9fc29tZXRoaW5nRWxzZS5zY3NzIiwiZGlyL3Rlc3QyLmNzcyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiQUFBQTtFQUNFLGlCQUFpQixFQURaOztBQ0FQO0VBQ0UsZ0JBQWdCO0VBQ2hCLGlDQUFxQjtNQUFyQiw2QkFBcUI7VUFBckIseUJBQXFCLEVBRmY7O0FDQVI7RUFDRSxhQUFhLEVBQUUiLCJmaWxlIjoibWFpbi5jc3MiLCJzb3VyY2VzQ29udGVudCI6WyIuYm9keSB7XG4gIGJhY2tncm91bmQ6IGJsdWU7XG59XG4iLCIuY2xhc3Mge1xuICBiYWNrZ3JvdW5kOiByZWQ7XG4gIHRyYW5zZm9ybTogdHJhbnNsYXRlWCgwKTtcbn1cbiIsIiNpZCB7XG4gIGNvbG9yOiBncmVlbjsgfVxuIl0sInNvdXJjZVJvb3QiOiIvc291cmNlLyJ9 */

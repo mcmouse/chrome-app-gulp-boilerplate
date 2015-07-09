@@ -1,300 +1,311 @@
-/* globals require */
-/* jshint node:true */
+/*eslint-disable*/
 
-'use strict';
+var gulp           = require('gulp');
+var browserify     = require('browserify');
+var watchify       = require('watchify');
+var babelify       = require('babelify');
+var uglifyify      = require('uglifyify');
+var sourcemaps     = require('gulp-sourcemaps');
+var envify         = require('envify');
+var connect        = require('gulp-connect');
+var eslint         = require('gulp-eslint');
+var vinylPaths     = require('vinyl-paths');
+var source         = require('vinyl-source-stream');
+var buffer         = require('vinyl-buffer');
+var del            = require('del');
+var gulpif         = require('gulp-if');
+var gutil          = require('gulp-util');
+var runSequence    = require('run-sequence');
+var notify         = require('gulp-notify');
+var url            = require('url');
+var babel          = require('gulp-babel');
+var spritesmith    = require('gulp.spritesmith');
+var tinylr         = require('tiny-lr');
+var mochaPhantomJS = require('gulp-mocha-phantomjs');
+var minCss         = require('gulp-minify-css');
+var sass           = require('gulp-sass');
+var concat         = require('gulp-concat');
+var postCss        = require('gulp-postcss');
+var autoprefixer   = require('autoprefixer-core');
+var filter         = require('gulp-filter');
+var zip            = require('gulp-zip');
 
-var gulp = require('gulp');
-var gutil = require('gulp-util');
-var gulpif = require('gulp-if');
-var compass = require('gulp-compass');
-var browserify = require('browserify');
-var watchify = require('watchify');
-var source = require('vinyl-source-stream');
-var _ = require('lodash');
-var browserSync = require('browser-sync');
-var reload = browserSync.reload;
-var del = require('del');
-var sass = require('gulp-sass');
-var concat = require('gulp-concat');
-var autoprefixer = require('gulp-autoprefixer');
-var nodemon = require('gulp-nodemon');
-
-//Build configuration object
-var config = {
-  watch: false,
-  inputFiles: {
-    //HTML gets passed through directly
-    html: './src/extension/html/*.html',
-    //Browserify-compatible start file
-    manifest: './src/extension/manifest.json',
-    background: './src/extension/js/background.js',
-    js: './src/extension/js/start.js',
-    jslibs: './src/extension/js/libs/*.js',
-    //For library CSS that doesn't get passed through SASS
-    images: './src/extension/img/*',
-    css: './src/extension/css/*.css',
-    fonts: './src/extension/fonts/*',
-    scss: ['./src/extension/scss/*.scss',
-      './src/extension/scss/**/*.scss'
-    ],
-    //Server gets copied through directly
-    server: './src/server/*',
-  },
-  outputDirs: {
-    server: './dist/server/',
-    extension: './dist/extension/',
-  },
-  outputFiles: {
-    js: 'js/app.js',
-    //Concat CSS libraries
-    css: 'css/libs.css',
-    scss: 'css/main.css',
-  },
-  browserifyOpts: {
-    basedir: './',
-    paths: [
-      './src/extension/js/',
-      './src/extension/js/libs/',
-    ],
-    extensions: ['.html'],
-  },
-  autoprefixerOpts: {
-    cascade: false,
-  },
-  sassOpts: {
-    style: 'expanded',
-  },
-  bundler: false,
+var conf = {
+  src:   ['**', '!js{/src,/src/**}', '!scss{,/**}'],
+  js:    ['./src/js/*.js', './src/js/**/*.js'],
+  img:   ['./src/img/**/*.{png,jpg,svg}'],
+  css:   ['./src/css/**/*.css'],
+  scss:  ['./src/scss/**/{!_*,*}.scss'],
+  jsSrc: './src/js/src/',
+  entry: ['foreground.js', 'background.js'],
+  dist:  './dist/',
+  distFiles: ['./dist/**'],
+  spritesImages: './src/img/sprites',
+  spritesCss: './src/scss/generated',
+  tests: ['./tests/*.js', './tests/**/*.js'],
+  testOutput: './test',
+  spritesCSS: './src/css/'
 };
 
-//Our browserify transforms
-var transforms = {
-  dev: {
-    compileTemplates: require('node-underscorify').transform({
-      extensions: ['html']
-    }),
-  },
-  prod: {
-    compileTemplates: require('node-underscorify').transform({
-      extensions: ['html']
-    }),
-    uglifyify: {
-      opts: {
-        global: true,
-      },
-      transform: require('uglifyify')
-    }
-  }
-};
+var isProd = process.env.NODE_ENV === 'production';
 
-//Set our environment, and extend config with environment-specific options
-function setEnvironment() {
-  config.environment = (gutil.env.hasOwnProperty('env') ? gutil.env.env : 'dev');
+gulp.task('clean', function () {
+  return gulp.src([conf.dist, conf.spritesImages])
+    .pipe(vinylPaths(del))
+    .on('error', gutil.log);
+});
 
-  if (config.environment === 'dev') {
-    //Dev-only config here
-    config.browserifyOpts.debug = true;
-  }
+gulp.task('copy', function () {
+  return gulp.src(conf.src, {cwd: './src'})
+    .pipe(gulp.dest(conf.dist))
+    .pipe(connect.reload())
+    .on('error', gutil.log);
+});
 
-  if (config.environment === 'prod') {
-    //Production only config here
-    //Minify CSS
-    config.sassOpts.style = 'compressed';
-  }
-}
+gulp.task('sprite', function () {
+  var spriteData = gulp.src(conf.img).pipe(spritesmith({
+    imgName: 'sprite.png',
+    cssName: 'sprite.css',
+    imgPath: '/img/sprites/sprite.png'
+  }));
 
-//Log errors
-function logError(err) {
-  gutil.log('Error! ' + err.message);
-}
+  // Pipe image stream through image optimizer and onto disk
+  spriteData.img
+    .pipe(gulp.dest(conf.spritesImages));
 
-//Apply browserify stream transforms
-function applyTransforms(stream) {
-  _.each(transforms[config.environment], function (transform) {
-    //If transform object has own options
-    if (transform.hasOwnProperty('opts')) {
-      //Transform with options
-      stream.transform(transform.opts, transform.transform);
-    } else {
-      //Just transform
-      stream.transform(transform);
-    }
-  });
+  // Pipe CSS stream through CSS optimizer and onto disk
+  spriteData.css
+    .pipe(gulp.dest(conf.spritesCSS));
+});
 
-  return stream;
-}
+gulp.task('copy-css', function() {
+  //Copy over libraries
+  gulp.src(conf.css)
+    .pipe(gulpif(isProd, minCss()))
+    .pipe(gulp.dest(conf.dist + 'css/'))
+    .on('error', gutil.log);
+});
 
-//Get our bundler
-function getBundler() {
-  if (config.watch) {
-    config.bundler = watchify(browserify(config.inputFiles.js, _.extend(config.browserifyOpts, watchify.args)));
-  } else {
-    config.bundler = browserify(config.inputFiles.js, _.extend(config.browserifyOpts, watchify.args));
-  }
-
-  return config.bundler;
-}
-
-function bundle() {
-  config.bundler
-    .bundle()
-    .on('error', logError)
-  //Pipe bundle into vinyl temporary output file
-  .pipe(source(config.outputFiles.js))
-  //Write file
-  .pipe(gulp.dest(config.outputDirs.extension))
-  //Trigger livereload
-  .pipe(gulpif(config.watch, reload({
-    stream: true
-  })));
-}
-
-//Build our JS one time
-function buildJS() {
-
-  //Get our transformed browserify bundle
-  config.bundler = applyTransforms(getBundler());
-  if (config.watch) {
-    config.bundler.on('update', bundle);
-  }
-
-  bundle();
-
-}
-
-//For building libraries
-function buildCSS() {
-  //Move our libraries
-  return gulp.src(config.inputFiles.css)
-    .pipe(gulpif(config.environment === 'prod', concat(config.outputFiles.css)))
-    .pipe(gulp.dest(config.outputDirs.extension + 'css/'));
-}
-
-function buildSCSS() {
-  //Pipe our CSS through autoprefixer, SASS, and concat
-  return gulp.src(config.inputFiles.scss)
-    .pipe(compass({
-      config_file: './conf/config.rb',
-      css: './src/extension/css/',
-      sass: './src/extension/scss/',
+gulp.task('scss', function() {
+  gulp.src(conf.scss)
+    .pipe(gulpif(!isProd, sourcemaps.init()))
+    .pipe(sass({
+      outputStyle: isProd ? 'compressed' : 'nested'
     }))
-    .pipe(concat(config.outputFiles.scss))
-    .pipe(gulp.dest(config.outputDirs.extension))
-    .pipe(gulpif(config.watch, reload({
-      stream: true
-    })));
-}
-
-function buildHTML() {
-  return gulp.src(config.inputFiles.html)
-    .pipe(gulp.dest(config.outputDirs.extension))
-    .pipe(gulpif(config.watch, reload({
-      stream: true
-    })));
-}
-
-function buildFonts() {
-  return gulp.src(config.inputFiles.fonts)
-    .pipe(gulp.dest(config.outputDirs.extension + 'css/fonts/'))
-    .pipe(gulpif(config.watch, reload({
-      stream: true
-    })));
-}
-
-function buildImages() {
-  return gulp.src(config.inputFiles.images)
-    .pipe(gulp.dest(config.outputDirs.extension + 'img/'))
-    .pipe(gulpif(config.watch, reload({
-      stream: true
-    })));
-}
-
-function buildJSLibs() {
-  return gulp.src(config.inputFiles.jslibs)
-    .pipe(gulp.dest(config.outputDirs.extension + 'js/'))
-    .pipe(gulpif(config.watch, reload({
-      stream: true
-    })));
-}
-
-function buildServer() {
-  return gulp.src(config.inputFiles.server)
-    .pipe(gulp.dest(config.outputDirs.server));
-}
-
-//Set environment based on passed flag
-gulp.task('setEnvironment', function () {
-  setEnvironment();
+    .pipe(postCss([autoprefixer({
+      browsers: '> 0.5%'
+    })]))
+    .pipe(concat('main.css'))
+    .pipe(gulpif(!isProd, sourcemaps.write()))
+    .pipe(gulp.dest(conf.dist + 'css/'))
+    .on('error', gutil.log);
 });
 
-// clean the output directory
-gulp.task('clean', ['setEnvironment'], function (callback) {
-  //Clean out the target directory
-  del(['./dist/'], callback);
+
+gulp.task('lint', function () {
+  var noLib = filter(['*', '!./src/js/lib']);
+  return gulp.src(conf.js)
+      .pipe(noLib)
+      .pipe(eslint())
+      .pipe(eslint.format())
+      .pipe(gulpif(isProd, eslint.failOnError()));
 });
 
-gulp.task('static', ['clean'], function () {
-  buildHTML();
-  buildCSS();
-  buildFonts();
-  buildImages();
-  buildJSLibs();
+gulp.task('transpile', function () {
+  conf.entry.forEach(function(entry) {
 
-  gulp.src(config.inputFiles.manifest)
-    .pipe(gulp.dest(config.outputDirs.extension));
+    var bundler = browserify({
+        cache: {}, packageCache: {}, fullPaths: false,
+        paths: [conf.jsSrc],
+        entries: [conf.jsSrc + entry],
+        debug: !isProd,
+        detectGlobals: true
+      });
 
-  gulp.src(config.inputFiles.background)
-    .pipe(gulp.dest(config.outputDirs.extension));
-});
-
-gulp.task('scss', ['clean'], function () {
-  buildSCSS();
-});
-
-gulp.task('js', ['clean'], function () {
-  buildJS();
-});
-
-gulp.task('fonts', ['clean'], function () {
-  buildFonts();
-});
-
-gulp.task('server', ['clean'], function () {
-  buildServer();
-});
-
-//Persistent build task
-gulp.task('build', ['clean', 'server', 'static', 'scss', 'js']);
-
-//Doesn't re-run the JS task because we only want to construct one
-//watchify bundler
-gulp.task('watch', ['clean', 'server', 'static', 'scss'], function () {
-  config.watch = true;
-  buildJS();
-
-  gulp.watch(config.inputFiles.html, buildHTML);
-  gulp.watch(config.inputFiles.css, buildCSS);
-  gulp.watch(config.inputFiles.scss, buildSCSS);
-  gulp.watch(config.inputFiles.fonts, buildFonts);
-  gulp.watch(config.inputFiles.images, buildImages);
-  gulp.watch(config.inputFiles.server, buildServer);
-
-  browserSync({
-    server: {
-      baseDir: './dist/extension/'
+    if (!isProd) {
+      bundler = watchify(bundler);
     }
-  });
 
-  setTimeout(function () {
-    nodemon({
-      script: './dist/server/server.js',
-      ext: 'js',
-    }).on('restart', function () {
-      console.log('Node server restarted!');
-    });
-  }, 1000);
+    var bundle = function bundle () {
+      return bundler.bundle()
+          // log errors if they happen
+          .on('error', gutil.log.bind(gutil, 'Browserify Error'))
+          .on('error', notify.onError(function(error){
+            var errorRegex = new RegExp('SyntaxError\:\s(\/[A-Za-z0-9\/\.]*)\:\s([A-Za-z0-9\s\-]*)\s(\([0-9]{1,5}\:[0-9]{1,5}\))')
+            var errorString = error.toString();
+            var errorArray = errorString.split(':');
+            var errorMessge = errorArray.slice(2, errorArray.length)
+                                        .join(':').replace(__dirname, '')
+                                        .replace('while parsing file: ', '')
+            return errorMessge;
+          }))
+          .on('error', function (error) {
+            if (isProd) throw error
+          })
+          .pipe(source(entry))
+          .pipe(buffer())
+          .pipe(gulpif(!isProd, sourcemaps.init({loadMaps: !isProd}))) // loads map from browserify file
+          .pipe(gulpif(!isProd, sourcemaps.write()))
+          .pipe(gulp.dest(conf.dist + 'js'))
+          .pipe(connect.reload());
+    }
+
+    bundler.transform(babelify.configure({
+      ignore: /\.scss$/,
+      optional: ['es7.decorators', 'es7.classProperties']
+    }));
+
+    bundler.transform({
+        global: true
+    }, 'envify');
+
+    if (isProd) {
+      bundler.transform({
+        global: true
+      }, 'uglifyify');
+    }
+
+    bundler.add(conf.jsSrc + entry);
+    bundler.on('update', bundle); // on any dep update, runs the bundler
+    bundler.on('log', gutil.log); // output build logs to terminal
+
+    bundle();
+  });
 });
 
-gulp.task('default', ['build']);
+gulp.task('connect', function () {
+  var lr = tinylr();
+  lr.listen(35729);
+});
 
-/* jshint ignore:end */
+gulp.task('watch', function () {
+  gulp.watch(conf.js, ['lint']);
+  gulp.watch('./src/**/*.{html,png,jpeg,jpg,json}', ['copy']);
+  gulp.watch(conf.css, ['copy-css']);
+  gulp.watch(conf.scss, ['scss']);
+});
+
+gulp.task('isProdFalse', function () {
+  isProd = false;
+})
+
+gulp.task('isProdTrue', function () {
+  isProd = true;
+})
+
+gulp.task('zip', function(){
+  return gulp.src(conf.distFiles)
+    .pipe(zip('extension.zip'))
+    .pipe(gulp.dest(conf.dist));
+});
+
+gulp.task('build', function(callback) {
+  runSequence('clean', 'sprite', ['copy-css', 'scss'], ['lint', 'transpile'], 'copy', callback);
+});
+
+gulp.task('dev', ['connect', 'watch', 'build'])
+
+gulp.task('default', function(callback) {
+  runSequence('isProdTrue', 'build', 'zip');
+});
+
+
+
+
+/******************************************************
+*******************************************************
+******************* Test Taks *************************
+*******************************************************
+*******************************************************/
+
+gulp.task('transpile-tests', function() {
+  var bundler = browserify({
+    cache: {}, packageCache: {}, fullPaths: false,
+    paths: ['./src/js/'],
+    entries: ['./tests/index.js'],
+    debug: true,
+    detectGlobals: true
+  });
+  var bundle = function bundle () {
+    return bundler.bundle()
+      // log errors if they happen
+      .on('error', gutil.log.bind(gutil, 'Browserify Error'))
+      .on('error', function (error) {
+        throw error
+      })
+      .pipe(source('bundle.js'))
+      .pipe(buffer())
+      .pipe(sourcemaps.init({loadMaps: true})) // loads map from browserify file
+      .pipe(sourcemaps.write())
+      .pipe(gulp.dest(conf.testOutput))
+      .pipe(connect.reload());
+  }
+
+  bundler.transform(babelify.configure({
+    ignore: /\.scss$/,
+    optional: ['es7.decorators', 'es7.classProperties']
+  }));
+
+  bundler.transform({
+      global: true
+  }, 'envify');
+
+  // bundler.transform(scssify, {
+  //   'autoInject': {
+  //     'styleTag': isProd
+  //   },
+  //   'postcss': {
+  //     'autoprefixer': {}
+  //   },
+  //   'sass': {
+  //     'sourceMap': true,
+  //     'sourceMapEmbed': true,
+  //     'sourceMapContents': true,
+  //     'includePaths': ['./src/scss/'],
+  //     importer: function (file, prev, done) {
+  //       if (file === 'env') {
+  //         done({
+  //           contents: '$app-url: "' + process.env.SCS_ADMIN_URL + '";\n'
+  //         })
+  //       } else {
+  //         done()
+  //       }
+  //     }
+  //   }
+  // });
+
+  bundler.add('./tests/index.js');
+  bundler.on('update', bundle); // on any dep update, runs the bundler
+  bundler.on('log', gutil.log); // output build logs to terminal
+
+  return bundle()
+})
+
+
+gulp.task('mocha', function () {
+  return gulp
+    .src('test/index.html')
+    .pipe(mochaPhantomJS({reporter: 'list'}))
+    .on('error', notify.onError(function(error) {
+      return 'Unit tests failing'
+    }));
+});
+
+gulp.task('test', ['isProdFalse'], function() {
+  runSequence( 'transpile-tests', 'mocha');
+})
+
+gulp.task('test-watch', ['connect-test', 'test'], function() {
+  gulp.watch(conf.js, ['test']);
+  gulp.watch(conf.tests, ['test']);
+})
+
+gulp.task('connect-test', function () {
+  connect.server({
+    root: ['.'],
+    reloadPage: './test/index.html',
+    host: 'http://localhost',
+    port: 8091,
+    livereload: true
+  });
+});
